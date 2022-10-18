@@ -30,18 +30,27 @@ int main (int argc, char *argv[]) {
    for (i = id*portion; i <= (id+1)*portion; i++) {
       localCount += checkCircuit (id, i);
    }
-   printf ("Process %d finished.\n", id);
-   fflush (stdout);
+   //printf ("Process %d finished.\n", id);
+   //fflush (stdout);
+
    if(id!=0){
- 
+       MPI_Send(&localCount, 1, MPI_INTEGER, 0, 0, MPI_COMM_WORLD);
    }else{
+       int i=1;
+       for(;i<numprocs;i++){
+           int temp;
+           MPI_Status status;
+           MPI_Recv(&temp, 1, MPI_INTEGER, i, 0, MPI_COMM_WORLD, &status);
+           localCount += temp;
+       }
    }
 
    if (id == 0){
+      globalCount = localCount;
       totalTime = MPI_Wtime() - startTime;
       printf("CircuitSAT finished in time %f secs.\n", totalTime);
       printf("A total of %d solutions were found.\n\n", globalCount);
-      //printf("%d %f %d" numprocs, totalTime, globalCount);
+      //printf("%d %f %d\n" numprocs, totalTime, globalCount);
       fflush(stdout);
    }
 

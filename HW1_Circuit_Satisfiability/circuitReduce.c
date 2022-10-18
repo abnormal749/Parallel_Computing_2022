@@ -31,8 +31,8 @@ int main (int argc, char *argv[]) {
    for (i = id*portion; i <= (id+1)*portion; i++) {
       localCount += checkCircuit (id, i);
    }
-   printf ("Process %d finished.\n", id);
-   fflush (stdout);
+   //printf ("Process %d finished.\n", id);
+   //fflush (stdout);
    MPI_Reduce(&localCount, &globalCount, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD);
 
    if (id == 0){
