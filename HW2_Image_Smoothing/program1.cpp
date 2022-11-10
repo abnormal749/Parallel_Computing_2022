@@ -85,20 +85,20 @@ int main(int argc,char *argv[])
             BMPSaveData = alloc_memory(totalHeight, totalWidth);
 
 
-        //Initial scattering of blocks -> every BMPData
-        int localRecv = (floor((double)totalHeight*(id+1) /numprocs) - ceil((double)totalHeight*id/numprocs)+2) * totalWidth;
-        int localBias = ceil((double)totalHeight*id/numprocs) > 0? ceil((double)totalHeight*id/numprocs)-1:0;
+        //將圖片區塊分給節點BMPData
+        int localRecv_Size = (floor((double)totalHeight*(id+1) /numprocs) - ceil((double)totalHeight*id/numprocs)+2) * totalWidth;
+        int localRecv_Bias = ceil((double)totalHeight*id/numprocs) > 0? ceil((double)totalHeight*id/numprocs)-1:0;
         int scatter_Block[numprocs]   = {};
         int scatter_Disp[numprocs] = {};
         for(int i=0; i<numprocs; i++){
             scatter_Block[i] = (floor((double)totalHeight*(i+1) /numprocs) - ceil((double)totalHeight*i/numprocs)+2) * totalWidth;
             scatter_Disp[i] = (ceil((double)totalHeight*i/numprocs) > 0? ceil((double)totalHeight*i/numprocs)-1:0 ) * totalWidth;
         }
-        MPI_Scatterv(&BMPSaveData[0][0],scatter_Block,scatter_Disp, MPI_RGBTRIPLE,&BMPData[localBias][0], localRecv, MPI_RGBTRIPLE, 0, MPI_COMM_WORLD);
+        MPI_Scatterv(&BMPSaveData[0][0],scatter_Block,scatter_Disp, MPI_RGBTRIPLE,&BMPData[localRecv_Bias][0], localRecv_Size, MPI_RGBTRIPLE, 0, MPI_COMM_WORLD);
         if(id!=0)
             swap(BMPSaveData,BMPData);
 
-        //Last node will need Row 0!
+        //最後一個節點會使用到第一行的數值
         if(id==0){
             MPI_Send(&BMPSaveData[0][0], totalWidth, MPI_RGBTRIPLE,numprocs-1,0,MPI_COMM_WORLD);
         }else if(id==numprocs-1){
@@ -115,9 +115,16 @@ int main(int argc,char *argv[])
 	for(int count = 0; count < NSmooth ; count ++){
 	    //把像素資料與暫存指標做交換
 	    swap(BMPSaveData,BMPData);
-	    //進行平滑運算
+	    //區塊起始與結束位置
             int block_Start = ceil(totalHeight * id / numprocs);
             int block_End = floor(totalHeight * (id+1) / numprocs);
+	    //區塊之間交換之前計算過的邊rows
+            MPI_Send(&BMPData[block_End-1][0], totalWidth, MPI_RGBTRIPLE, id==(numprocs-1) ? 0 : id+1, 0, MPI_COMM_WORLD);
+            MPI_Recv(&BMPData[id==0? totalHeight-1 : block_Start-1][0], totalWidth, MPI_RGBTRIPLE, id==0 ? numprocs-1 : id-1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            MPI_Send(&BMPData[block_Start][0], totalWidth, MPI_RGBTRIPLE, id==0 ? (numprocs-1) : id-1, 1, MPI_COMM_WORLD);
+            MPI_Recv(&BMPData[id==(numprocs-1)? 0 : block_End][0], totalWidth, MPI_RGBTRIPLE, id==(numprocs-1) ? 0:id+1, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	    //進行平滑運算
 	    for(int i = block_Start; i<block_End ; i++)
 	        for(int j =0; j<totalWidth ; j++){
 		    /*********************************************************/
@@ -137,17 +144,16 @@ int main(int argc,char *argv[])
 
 	}
 
-        //Gather final blocks -> root's BMPData
-        int localSend = floor((double)totalHeight*(id+1) /numprocs) - ceil((double)totalHeight*id/numprocs);
-        localSend *= totalWidth;
-        localBias = ceil((double)totalHeight*id/numprocs) > 0? ceil((double)totalHeight*id/numprocs):0;
+        //把資料彙整到root的 BMPData
+        int localSend_Size = (floor((double)totalHeight*(id+1) /numprocs) - ceil((double)totalHeight*id/numprocs) )*totalWidth;
+        int localSend_Bias = ceil((double)totalHeight*id/numprocs) > 0? ceil((double)totalHeight*id/numprocs):0;
         int gather_Block[numprocs]   = {};
         int gather_Disp[numprocs] = {};
         for(int i=0; i<numprocs; i++){
             gather_Block[i] = (floor((double)totalHeight*(i+1) /numprocs) - ceil((double)totalHeight*i/numprocs) )*totalWidth;
             gather_Disp[i] = (ceil((double)totalHeight*i/numprocs) > 0? ceil((double)totalHeight*i/numprocs):0 )*totalWidth;
         }
-        MPI_Gatherv(&BMPSaveData[localBias][0], localSend , MPI_RGBTRIPLE, &BMPData[0][0], gather_Block, gather_Disp, MPI_RGBTRIPLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(&BMPSaveData[localSend_Bias][0], localSend_Size , MPI_RGBTRIPLE, &BMPData[0][0], gather_Block, gather_Disp, MPI_RGBTRIPLE, 0, MPI_COMM_WORLD);
         if(id==0)
             swap(BMPSaveData,BMPData);
 
@@ -159,6 +165,7 @@ int main(int argc,char *argv[])
  	//寫入檔案
         if(id==0){
       	    cout << "The execution time = "<< endwtime-startwtime <<endl ;
+	    cout << endwtime-startwtime <<endl;
             if ( saveBMP( outfileName ) )
                 cout << "Save file successfully!!" << endl;
             else
