@@ -11,13 +11,12 @@
 #include <omp.h>
 #include <mpi.h>
 
-#define NGENERATION 500
+#define NGENERATION 100000000
 #define ALPHA 2
 #define BETA 5
 #define RHO 0.2
-#define Q 2500.0
-#define ANTNUM 100
 
+int Q  = 2000.0;
 int num_city;
 using namespace std;
 
@@ -61,6 +60,8 @@ int main(int argc, char* argv[]){
     MPI_Bcast(&path_length, count, MPI_INT, 0, MPI_COMM_WORLD);
 
     num_city = sqrt(count);
+    int num_ant = num_city*1.5;
+    
     vector<vector<int>> distance(num_city, vector<int>(num_city));
     vector<vector<double>> phero_Matrix(num_city, vector<double>(num_city, 1.0));
 
@@ -78,12 +79,12 @@ int main(int argc, char* argv[]){
     double start = MPI_Wtime();
     srand(time(NULL));
 
-    for(int t = 0; t < NGENERATION; t++){
-        vector<Ant> ants(ANTNUM);
+    for(int t = 0; t < NGENERATION/comm_sz; t++){
+        vector<Ant> ants(num_ant);
 
         for(int i = 0; i < num_city - 1; i++){
             #pragma omp for shared(phero_Matrix,distance)
-            for(int k = 0; k < ANTNUM; k++){
+            for(int k = 0; k < num_ant; k++){
                 double Pij_arr[num_city]; // PROBABILITY i to j
                 double nij_arr[num_city]; // HEURISTIC VALUE
                 double tn_arr[num_city];  // tij
@@ -138,14 +139,14 @@ int main(int argc, char* argv[]){
         }
         
         #pragma omp for
-        for(int k = 0; k < ANTNUM; k++){
+        for(int k = 0; k < num_ant; k++){
             ants[k].path_length += distance[ants[k].curr_city][ants[k].tour[0]];
             ants[k].curr_city = ants[k].tour[0];
         }
 
         // UPDATE Lenght L*
         #pragma omp for
-        for(int k = 0; k < ANTNUM; k++){
+        for(int k = 0; k < num_ant; k++){
             if(ants[k].path_length >= min_length) continue;
 
             #pragma omp critical
@@ -155,17 +156,25 @@ int main(int argc, char* argv[]){
                     for(int x = 0; x < num_city; x++){
                         local_min_tour[x] = ants[k].tour[x];
                     }
+                    // PREVIEW RESULT
+                    if(t!=0 && t%100000==0){
+                        cout << min_length << " ";
+                        for(int temp = 0; temp<num_city; temp++)
+                            cout << local_min_tour[temp] << " ";
+                    cout << "\n";
+                   }
                 }
-            }
+             }
         }
 
+        Q = min_length;
         // UPDATE PHEROMONE M. FOR NEXT RUN
         for(auto &v:phero_Matrix){
             for(double &x:v){
                 x = (1 - RHO) * x;
             }
         }
-        for(int k = 0; k < ANTNUM; k++){
+        for(int k = 0; k < num_ant; k++){
             if(ants[k].path_length == 0) continue;
             for(int j = 0; j < num_city - 1; j++){
                 phero_Matrix[ants[k].tour[j]][ants[k].tour[j+1]] += Q / ants[k].path_length;
